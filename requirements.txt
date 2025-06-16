@@ -1,0 +1,15 @@
+casadi
+ipython
+ipywidgets
+jupyterlab
+jupyterlab_server
+nbconvert
+nbformat
+numpy
+sympy
+cvxpy
+matplotlib
+matplotx
+pybullet
+black==22.3.0
+black[jupyter]
