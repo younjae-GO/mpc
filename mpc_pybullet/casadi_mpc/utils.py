@@ -76,16 +76,6 @@ def get_ref_trajectory(state, path, target_v, T, DT):
     xref[3, :] = path[2, ind] - state[3]  # Theta
 
     def fix_angle_reference(angle_ref, angle_init):
-        """
-        Removes jumps greater than 2PI to smooth the heading
-
-        Args:
-            angle_ref (array-like):
-            angle_init (float):
-
-        Returns:
-            array-like:
-        """
         diff_angle = angle_ref - angle_init
         diff_angle = np.unwrap(diff_angle)
         return angle_init + diff_angle
