@@ -12,7 +12,7 @@ class VehicleModel:
         self.max_acc = 1.0
         self.max_steer = np.radians(30)
 
-class MPC:
+class MPC_soft:
     def __init__(
         self,
         vehicle: VehicleModel,
@@ -22,6 +22,7 @@ class MPC:
         final_state_cost: list,
         input_cost: list,
         input_rate_cost: list,
+        obs: list=None,
     ):
         self.nx = 4  # number of state vars
         self.nu = 2  # number of input/control vars
@@ -45,6 +46,29 @@ class MPC:
         self.R = np.diag(input_cost)
         self.P = np.diag(input_rate_cost)
 
+        self.obstacles = obs
+
+    def update_obstacles(self, vehicle_state):
+        x, y, _, theta = vehicle_state
+        cos_t = np.cos(theta)
+        sin_t = np.sin(theta)
+
+        transformed = []
+
+        for obs in self.obstacles:
+            world_pos = obs["pos"]
+            dx = world_pos[0] - x
+            dy = world_pos[1] - y
+
+            local_x = dx * cos_t + dy * sin_t
+            local_y = -dx * sin_t + dy * cos_t
+
+            new_obs = obs.copy()
+            new_obs["pos"] = [local_x, local_y, world_pos[2]]
+            transformed.append(new_obs)
+
+        return transformed
+    
     def compute_linear_model_matrices(self, x_bar: list, u_bar: list):
         v = x_bar[2]
         theta = x_bar[3]
@@ -70,7 +94,9 @@ class MPC:
         B[3, 1] = v / (self.vehicle.wheelbase * cd**2)
         B_lin = self.dt * B
 
-        f_xu = np.array([v * ct, v * st, a, v * td / self.vehicle.wheelbase]).reshape(self.nx, 1)
+        f_xu = np.array([v * ct, v * st, a, v * td / self.vehicle.wheelbase]).reshape(
+            self.nx, 1
+        )
         C_lin = (
             self.dt
             * (
@@ -86,6 +112,7 @@ class MPC:
         initial_state: list,
         target: list,
         prev_cmd: list,
+        state
     ):
         assert len(initial_state) == self.nx
         assert len(prev_cmd) == self.nu
@@ -94,36 +121,42 @@ class MPC:
         x = ca.MX.sym('x', self.nx, self.control_horizon + 1)
         u = ca.MX.sym('u', self.nu, self.control_horizon)
         cost = 0
-        g = []  # constraints
+        g = []
 
-        # Tracking error cost
+        A, B, C = self.compute_linear_model_matrices(initial_state, prev_cmd)
         for k in range(self.control_horizon):
             error = x[:, k + 1] - target[:, k]
             cost += ca.mtimes([error.T, self.Q, error])
-
-        # Final point tracking cost
         final_error = x[:, -1] - target[:, -1]
         cost += ca.mtimes([final_error.T, self.Qf, final_error])
-
-        # Actuation magnitude cost
         for k in range(self.control_horizon):
             cost += ca.mtimes([u[:, k].T, self.R, u[:, k]])
-
-        # Actuation rate of change cost
         for k in range(1, self.control_horizon):
             du = u[:, k] - u[:, k - 1]
             cost += ca.mtimes([du.T, self.P, du])
 
-        A, B, C = self.compute_linear_model_matrices(initial_state, prev_cmd)
+        ###############################################################################################
 
-        # Kinematics Constrains (equality constraints)
+        obstacles = self.update_obstacles(state)
+
+        eps = 1e-6
+        obstacle_penalty_weight = 100.0
+
+        for k in range(self.control_horizon + 1):
+            for obs in obstacles:
+                obs_x, obs_y = obs["pos"][0], obs["pos"][1]
+                
+                #break
+                dist_sq = (x[0, k] - obs_x)**2 + (x[1, k] - obs_y)**2
+                cost += obstacle_penalty_weight / (dist_sq+eps)
+
+        ###############################################################################################
+
+
         for k in range(self.control_horizon):
             g.append(x[:, k + 1] - (A @ x[:, k] + B @ u[:, k] + C.flatten()))
-
-        # initial state (equality constraint)
         g.append(x[:, 0] - initial_state)
 
-        # Flatten optimization variables
         opt_variables = ca.vertcat(ca.reshape(x, -1, 1), ca.reshape(u, -1, 1))
         
         # Create NLP problem
@@ -145,10 +178,11 @@ class MPC:
         # Create solver
         solver = ca.nlpsol('solver', 'ipopt', nlp, opts)
 
-        # Set up constraint bounds (equality constraints = 0)
         n_equality_constraints = (self.control_horizon + 1) * self.nx
+
         lbg = [0] * n_equality_constraints
         ubg = [0] * n_equality_constraints
+
 
         # Set up variable bounds (control input bounds)
         n_states = self.nx * (self.control_horizon + 1)
@@ -171,11 +205,18 @@ class MPC:
         # Initial guess (simple initialization)
         x0 = np.zeros(n_vars)
 
-        sol = solver(x0=x0, lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg)
-        
-        x_opt = sol['x']
-        
-        x_sol = ca.reshape(x_opt[:n_states], self.nx, self.control_horizon + 1)
-        u_sol = ca.reshape(x_opt[n_states:], self.nu, self.control_horizon)
-        
-        return np.array(x_sol), np.array(u_sol)
+        try:
+            sol = solver(x0=x0, lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg)
+            
+            x_opt = sol['x']
+            
+            x_sol = ca.reshape(x_opt[:n_states], self.nx, self.control_horizon + 1)
+            u_sol = ca.reshape(x_opt[n_states:], self.nu, self.control_horizon)
+            
+            return np.array(x_sol), np.array(u_sol)
+            
+        except Exception as e:
+            print(f"Optimization failed: {e}")
+            x_fallback = np.tile(np.array(initial_state).reshape(-1, 1), (1, self.control_horizon + 1))
+            u_fallback = np.tile(np.array(prev_cmd).reshape(-1, 1), (1, self.control_horizon))
+            return x_fallback, u_fallback

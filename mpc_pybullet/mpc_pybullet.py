@@ -215,6 +215,7 @@ def run_sim():
     R = [10, 10]  # input cost [acc ,steer]
     P = [10, 10]  # input rate of change cost [acc ,steer]
 
+
     mpc = MPC(VehicleModel(), T, DT, Q, Qf, R, P)
     x_history = []
     y_history = []
