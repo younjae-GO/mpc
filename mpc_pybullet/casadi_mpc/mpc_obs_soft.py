@@ -146,10 +146,8 @@ class MPC_soft:
             for obs in obstacles:
                 obs_x, obs_y = obs["pos"][0], obs["pos"][1]
                 
-                #break
-                dist_sq = (x[0, k] - obs_x)**2 + (x[1, k] - obs_y)**2
-                cost += obstacle_penalty_weight / (dist_sq+eps)
-
+                break
+            
         ###############################################################################################
 
 

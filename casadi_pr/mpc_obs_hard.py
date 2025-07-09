@@ -151,7 +151,11 @@ class MPC_hard:
                 obs_x, obs_y = obs["pos"][0], obs["pos"][1]
                 obs_sizex, obs_sizey = obs["size"][0], obs["size"][1]
 
-                break
+                #break
+                obs_size = obs_sizex**2 + obs_sizey**2                
+                dist = (x[0, k] - obs_x)**2 + (x[1, k] - obs_y)**2
+                g.append(obs_size + safety_margin - dist)
+
 
         ###############################################################################################
 
@@ -182,8 +186,8 @@ class MPC_hard:
         n_equality_constraints = (self.control_horizon + 1) * self.nx
         n_obstacle_constraints = len(self.obstacles) * (self.control_horizon + 1)
 
-        lbg = [0] * n_equality_constraints
-        ubg = [0] * n_equality_constraints
+        lbg = [0] * n_equality_constraints + [-ca.inf] * n_obstacle_constraints
+        ubg = [0] * n_equality_constraints + [0] * n_obstacle_constraints
 
         #############################################################################################
 

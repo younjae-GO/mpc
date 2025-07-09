@@ -5,7 +5,6 @@ import numpy as np
 np.seterr(divide="ignore", invalid="ignore")
 
 
-
 class VehicleModel:
     def __init__(self):
         self.wheelbase = 0.3
@@ -13,7 +12,7 @@ class VehicleModel:
         self.max_acc = 1.0
         self.max_steer = np.radians(30)
 
-class MPC_hard:
+class MPC_soft:
     def __init__(
         self,
         vehicle: VehicleModel,
@@ -69,7 +68,7 @@ class MPC_hard:
             transformed.append(new_obs)
 
         return transformed
-
+    
     def compute_linear_model_matrices(self, x_bar: list, u_bar: list):
         v = x_bar[2]
         theta = x_bar[3]
@@ -107,13 +106,13 @@ class MPC_hard:
             ).flatten()
         )
         return A_lin, B_lin, C_lin
-    
+
     def step(
         self,
         initial_state: list,
         target: list,
         prev_cmd: list,
-        state,
+        state
     ):
         assert len(initial_state) == self.nx
         assert len(prev_cmd) == self.nu
@@ -136,24 +135,27 @@ class MPC_hard:
             du = u[:, k] - u[:, k - 1]
             cost += ca.mtimes([du.T, self.P, du])
 
-
-        for k in range(self.control_horizon):
-            g.append(x[:, k + 1] - (A @ x[:, k] + B @ u[:, k] + C.flatten()))
-        g.append(x[:, 0] - initial_state)
-
         ###############################################################################################
+
         obstacles = self.update_obstacles(state)
 
-        safety_margin = 0.3
+        eps = 1e-6
+        obstacle_penalty_weight = 100.0
 
         for k in range(self.control_horizon + 1):
             for obs in obstacles:
                 obs_x, obs_y = obs["pos"][0], obs["pos"][1]
-                obs_sizex, obs_sizey = obs["size"][0], obs["size"][1]
-
-                break
+                
+                #break
+                dist_sq = (x[0, k] - obs_x)**2 + (x[1, k] - obs_y)**2
+                cost += obstacle_penalty_weight / (dist_sq+eps)
 
         ###############################################################################################
+
+
+        for k in range(self.control_horizon):
+            g.append(x[:, k + 1] - (A @ x[:, k] + B @ u[:, k] + C.flatten()))
+        g.append(x[:, 0] - initial_state)
 
         opt_variables = ca.vertcat(ca.reshape(x, -1, 1), ca.reshape(u, -1, 1))
         
@@ -176,16 +178,11 @@ class MPC_hard:
         # Create solver
         solver = ca.nlpsol('solver', 'ipopt', nlp, opts)
 
-
-        #############################################################################################
-
         n_equality_constraints = (self.control_horizon + 1) * self.nx
-        n_obstacle_constraints = len(self.obstacles) * (self.control_horizon + 1)
 
         lbg = [0] * n_equality_constraints
         ubg = [0] * n_equality_constraints
 
-        #############################################################################################
 
         # Set up variable bounds (control input bounds)
         n_states = self.nx * (self.control_horizon + 1)

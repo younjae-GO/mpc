@@ -210,8 +210,8 @@ def run_sim():
     R = [10, 10]
     P = [1, 1]
 
-    #mpc = MPC_soft(VehicleModel(), T, DT, Q, Qf, R, P, OBSTACLES)
-    mpc = MPC_hard(VehicleModel(), T, DT, Q, Qf, R, P, OBSTACLES)
+    mpc = MPC_soft(VehicleModel(), T, DT, Q, Qf, R, P, OBSTACLES)
+    #mpc = MPC_hard(VehicleModel(), T, DT, Q, Qf, R, P, OBSTACLES)
 
     x_history = []
     y_history = []

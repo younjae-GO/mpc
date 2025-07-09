@@ -84,3 +84,5 @@ def get_ref_trajectory(state, path, target_v, T, DT):
     xref[3, :] = fix_angle_reference(xref[3, :], xref[3, 0])
 
     return xref
+
+
